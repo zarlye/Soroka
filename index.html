@@ -1,12 +1,6 @@
-<!doctype html>
-<html lang="ru">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#0e7c86">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 64 64%27%3E%3Crect width=%2764%27 height=%2764%27 rx=%2716%27 fill=%27%230e7c86%27/%3E%3C/svg%3E">
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
 <title>Сорока</title>
-
+<meta name="claude:viewport-fit-sides" content="cover">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=Unbounded:wght@500;700&display=swap">
 <style>
 /* Сорока — мессенджер.
@@ -82,6 +76,7 @@ h1,h2,h3,p{margin:0}
 :focus-visible{outline:2px solid var(--accent-text);outline-offset:2px}
 ::selection{background:var(--chip-on)}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+[hidden]:not([hidden=until-found i]){display:none!important}
 
 /* ───── каркас ───── */
 #app{
@@ -222,9 +217,10 @@ h1,h2,h3,p{margin:0}
 .ch-sub{font-size:13px;color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ch-sub.live{color:var(--accent-text)}
 .back{display:none}
-.searchbar{display:flex;align-items:center;gap:8px;height:52px;flex:none;background:var(--panel);border-bottom:1px solid var(--line);z-index:3}
-.searchbar .search{flex:1}
-.searchbar .cnt{font-size:13px;color:var(--mute);min-width:52px;text-align:center;font-variant-numeric:tabular-nums}
+.searchbar{display:flex;align-items:center;gap:4px;height:52px;flex:none;background:var(--panel);border-bottom:1px solid var(--line);z-index:3}
+.searchbar .search{flex:1;min-width:0}
+.searchbar .cnt{font-size:13px;color:var(--mute);min-width:0;flex:none;text-align:center;font-variant-numeric:tabular-nums;white-space:nowrap}
+.searchbar .ibtn{width:38px;height:38px}
 
 .msgs{
   position:relative;flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;
@@ -599,10 +595,6 @@ textarea.inp{height:auto;min-height:76px;padding:11px 14px;resize:vertical;line-
 .gf{justify-content:flex-start}
 
 </style>
-
-<style>html,body{margin:0;height:100%}</style>
-</head>
-<body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
   <defs>
     <symbol id="logo" viewBox="0 0 48 48">
@@ -727,11 +719,6 @@ textarea.inp{height:auto;min-height:76px;padding:11px 14px;resize:vertical;line-
 </div>
 <div id="layer"></div>
 <div class="toasts" id="toasts" aria-live="polite"></div>
-
-<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
-<script src="config.js"></script>
 <script>
 (function(){
 'use strict';
@@ -1295,123 +1282,13 @@ function makeLocalRoom(uid) {
   };
 }
 
-/* ===== Firebase (бесплатный тариф Spark): общее хранилище вне Claude =====
-   Тот же API, что у makeLocalDB: doc/collection/get/set/update/delete/onSnapshot/where/orderBy/limit.
-   Нужны скрипты firebase-*-compat и объект window.SOROKA_FIREBASE (см. config.js). */
-function fbConfigured() {
-  const c = window.SOROKA_FIREBASE;
-  return !!(window.firebase && c && c.apiKey && c.projectId && String(c.apiKey).indexOf('ВСТАВЬТЕ') < 0);
-}
-async function makeFirebase() {
-  const fbs = window.firebase;
-  const app = fbs.apps.length ? fbs.app() : fbs.initializeApp(window.SOROKA_FIREBASE);
-  const auth = fbs.auth(app);
-  let user = auth.currentUser;
-  if (!user) {
-    await new Promise(res => { const off = auth.onAuthStateChanged(u => { off(); res(u); }); });
-    user = auth.currentUser;
-  }
-  if (!user) { const cred = await auth.signInAnonymously(); user = cred.user; }
-  const fs = fbs.firestore(app);
-  const FV = fbs.firestore.FieldValue;
-
-  const wrapDoc = ref => ({
-    id: ref.id,
-    path: ref.path,
-    get: () => ref.get(),
-    set: data => ref.set(data),
-    /* update = слияние вложенных объектов, как в db страницы; создаёт документ, если его нет */
-    update: data => ref.set(data, { merge: true }),
-    delete: () => ref.delete(),
-    onSnapshot: (next, err) => ref.onSnapshot(next, err),
-    collection: sub => wrapColl(ref.collection(sub)),
-  });
-  function wrapColl(ref) {
-    return {
-      path: ref.path,
-      where: (f, op, v) => ref.where(f, op, v),
-      orderBy: (f, d) => ref.orderBy(f, d),
-      limit: n => ref.limit(n),
-      get: () => ref.get(),
-      onSnapshot: (next, err) => ref.onSnapshot(next, err),
-      doc: id => wrapDoc(id ? ref.doc(id) : ref.doc()),
-      add: async data => wrapDoc(await ref.add(data)),
-    };
-  }
-  const db = {
-    doc: p => wrapDoc(fs.doc(p)),
-    collection: p => wrapColl(fs.collection(p)),
-    persistFailed: () => false,
-  };
-
-  /* присутствие: документ presence/<uid>, «пульс» раз в минуту, пока вкладка видна */
-  const uid = user.uid;
-  const mine = {};
-  const subs = new Set();
-  const seen = new Map(); // uid -> {t, first, local}
-  let first = true;
-  const STALE = 150000;
-  const pref = fs.doc('presence/' + uid);
-  let lastBeat = 0;
-  function peers() {
-    const now = Date.now(), out = [];
-    seen.forEach((r, u) => {
-      const base = r.first ? r.d.t : r.local;
-      if (!base || now - base > STALE) return;
-      const pr = {};
-      for (const k in r.d) if (k !== 't') pr[k] = r.d[k];
-      out.push({ peer: u, by: u, isMe: u === uid, kind: 'viewer', presence: pr, updatedAt: r.d.ty ? r.localTy : base });
-    });
-    return out;
-  }
-  function fire() {
-    const l = peers();
-    subs.forEach(fn => { try { fn({ peers: l, joined: [], left: [], updated: [] }); } catch (e) { console.error(e); } });
-  }
-  fs.collection('presence').onSnapshot(snap => {
-    snap.docChanges().forEach(ch => {
-      const u = ch.doc.id;
-      if (ch.type === 'removed') { seen.delete(u); return; }
-      const d = ch.doc.data() || {};
-      const old = seen.get(u);
-      const now = Date.now();
-      const typingChanged = !old || old.d.ty !== d.ty;
-      seen.set(u, {
-        d, first: first && !old,
-        local: now,
-        localTy: typingChanged ? now : old.localTy,
-      });
-    });
-    first = false;
-    fire();
-  }, e => console.warn('[soroka] presence', e));
-  setInterval(() => { if (!document.hidden && mine.vis !== false) beat(); fire(); }, 60000);
-  function beat() {
-    lastBeat = Date.now();
-    pref.set(Object.assign({}, mine, { u: uid, t: lastBeat }), { merge: true }).catch(() => {});
-  }
-  const room = {
-    presence(patch) {
-      const del = {};
-      for (const k in patch) { if (patch[k] === null) { delete mine[k]; del[k] = FV.delete(); } else mine[k] = patch[k]; }
-      lastBeat = Date.now();
-      return pref.set(Object.assign({}, patch, del, { u: uid, t: lastBeat }), { merge: true });
-    },
-    onPeers(fn) { subs.add(fn); queueMicrotask(() => fn({ peers: peers(), joined: [], left: [], updated: [] })); return () => subs.delete(fn); },
-    peers,
-    connected: () => true,
-    onConnection(fn) { fn(true); return () => {}; },
-  };
-  return { db, room, uid, name: user.displayName || '' };
-}
-
 /* ===== состояние приложения ===== */
 const BOT_USER = { id: 'bot', n: 'Помощник', c: 3, e: '', a: 'ИИ-помощник на базе Claude', bot: true };
 const HOST_THEME = document.documentElement.getAttribute('data-theme');
 const TEST = window.__SOROKA_TEST || null;
 
 const S = {
-  mode: 'demo', fb: false, db: null, uid: null, canWrite: true, room: null, sample: null, userCap: null,
+  mode: 'demo', db: null, uid: null, canWrite: true, room: null, sample: null, userCap: null,
   me: null,
   users: new Map(), chats: new Map(), myReads: new Map(),
   saved: { last: null }, bot: { last: null }, paths: null,
@@ -2932,10 +2809,10 @@ function maybeWelcomeBot(empty) {
   const t = Date.now();
   const a = S.mode === 'demo'
     ? 'Привет! Это демо «Сороки»: контакты и чаты вымышленные и хранятся только в этом браузере. Откройте страницу из своего аккаунта Claude, чтобы переписываться с реальными людьми.'
-    : S.fb ? 'Привет! Это «Сорока». Помощник здесь только заготовка, зато можно переписываться с друзьями: нажмите карандаш над списком чатов.' : 'Привет! Я Помощник внутри «Сороки». Спрашивайте о чём угодно: помогу с текстом, идеей или планом.';
+    : 'Привет! Я Помощник внутри «Сороки». Спрашивайте о чём угодно: помогу с текстом, идеей или планом.';
   const b = S.mode === 'demo'
     ? 'Попробуйте написать Але, Тихону или Вере: они ответят заготовленными фразами. Можно ставить реакции, отвечать на сообщения и прикреплять фото.'
-    : S.fb ? 'Люди появятся в списке после первого входа на сайт. Отправьте друзьям ссылку.' : 'Чтобы переписываться с друзьями, нажмите карандаш над списком чатов. Люди появятся там после первого входа на страницу. Дайте им доступ «Участник» через «Поделиться», иначе они смогут только читать.';
+    : 'Чтобы переписываться с друзьями, нажмите карандаш над списком чатов. Люди появятся там после первого входа на страницу. Дайте им доступ «Участник» через «Поделиться», иначе они смогут только читать.';
   S.paths.bot.doc(newMid()).set({ u: 'bot', t, x: a, n: 0 }).catch(() => {});
   S.paths.bot.doc(newMid()).set({ u: 'bot', t: t + 1, x: b, n: 0 }).catch(() => {});
 }
@@ -2965,7 +2842,7 @@ async function runBot(text, excludeId) {
   if (typeof S.sample !== 'function') {
     await sleep(700);
     S.tmp = null;
-    const reply = S.fb ? 'Здесь я отвечаю заготовкой: настоящий ИИ доступен только на странице, открытой из аккаунта Claude. Для переписки с друзьями я не нужен.' : 'В демо-режиме я отвечаю заготовкой. Откройте страницу из аккаунта Claude, и я смогу отвечать по-настоящему.';
+    const reply = 'В демо-режиме я отвечаю заготовкой. Откройте страницу из аккаунта Claude, и я смогу отвечать по-настоящему.';
     try { await S.paths.bot.doc(newMid()).set({ u: 'bot', t: nextTs(), x: reply, n: 0 }); } catch (e) { /* ignore */ }
     renderChatHead();
     return;
@@ -3224,7 +3101,7 @@ function openSettings() {
     h('div', { class: 'field', style: 'margin-bottom:0' }, h('span', { class: 'lbl', text: S.mode === 'demo' ? 'Демо-режим' : 'О приватности' }),
       h('p', { class: 'hint', style: 'line-height:1.5;text-wrap:pretty', text: S.mode === 'demo'
         ? 'Контакты и чаты вымышленные. Всё хранится только в этом браузере. Откройте страницу из аккаунта Claude, чтобы переписываться с людьми.'
-        : S.fb ? 'Переписки хранятся в базе Firebase этого сайта. Владелец базы технически может их прочитать. «Избранное» видно только вам. Вход анонимный: если очистить данные браузера, вы потеряете доступ к своему профилю. Не отправляйте сюда пароли.' : 'Переписки хранятся в общем хранилище этой страницы. Технически их может прочитать любой, у кого есть доступ к странице. «Избранное» и «Помощник» видны только вам. Не отправляйте сюда пароли и личные данные.' }),
+        : 'Переписки хранятся в общем хранилище этой страницы. Технически их может прочитать любой, у кого есть доступ к странице. «Избранное» и «Помощник» видны только вам. Не отправляйте сюда пароли и личные данные.' }),
       S.mode === 'demo' ? h('button', { class: 'btn danger', type: 'button', style: 'margin-top:8px', text: 'Сбросить демо', onclick: () => resetDemo() }) : null));
 }
 function optRowLive(title, sub, get, toggle) {
@@ -3465,19 +3342,7 @@ async function boot() {
   if (!TEST) [dbCap, userCap, roomCap, sampleCap] = await Promise.all([claudeUse('db'), claudeUse('user'), claudeUse('room'), claudeUse('sample')]);
   let uid = null;
   if (dbCap && userCap) { try { uid = await userCap.id(); } catch (e) { uid = null; } }
-  let fb = null;
-  if (!(dbCap && uid) && !TEST && fbConfigured()) {
-    try { fb = await withTimeout(makeFirebase(), 20000, 'firebase'); }
-    catch (e) {
-      console.warn('[soroka] firebase', e);
-      const m = e && e.code === 'auth/operation-not-allowed' ? 'В Firebase не включён анонимный вход (Authentication → Sign-in method → Anonymous).' : 'Не удалось подключиться к Firebase. Проверьте config.js и соединение.';
-      showInfoGate('Нет связи', m, ['Повторить', () => { const g = $('#gate'); if (g) g.remove(); boot(); }]);
-      return;
-    }
-  }
-  if (fb) {
-    S.mode = 'remote'; S.fb = true; S.db = fb.db; S.uid = fb.uid; S.room = fb.room; S.sample = null; S.userCap = null; S.canWrite = true;
-  } else if (dbCap && uid) {
+  if (dbCap && uid) {
     S.mode = 'remote'; S.db = dbCap; S.uid = uid; S.room = roomCap; S.sample = sampleCap; S.userCap = userCap;
     try { const cw = await userCap.can('data.write'); S.canWrite = cw !== false; } catch (e) { S.canWrite = true; }
   } else {
@@ -3627,5 +3492,5 @@ boot();
 
 })();
 </script>
-</body>
-</html>
+
+</body></html>
